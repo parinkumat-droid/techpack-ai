@@ -8,8 +8,11 @@ import {
   type GarmentType,
   type TechPackInput,
 } from "@/lib/garments";
+import { checkMeasurement, type SpecTable } from "@/lib/specRules";
+import type { AiTechPack } from "@/lib/aiSchema";
+import TechPackView from "@/components/TechPackView";
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 const field =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -25,7 +28,12 @@ export default function TechPackForm() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [image, setImage] = useState<{ file: File; url: string } | null>(null);
   const [error, setError] = useState("");
-  const [submitted, setSubmitted] = useState<TechPackInput | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{
+    input: TechPackInput;
+    specTable: SpecTable;
+    ai: AiTechPack;
+  } | null>(null);
 
   const garment = GARMENTS[garmentType];
 
@@ -37,14 +45,14 @@ export default function TechPackForm() {
       return;
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      setError("That image is over 5 MB. Please pick a smaller one.");
+      setError("That image is over 4 MB. Please pick a smaller one.");
       return;
     }
     if (image) URL.revokeObjectURL(image.url);
     setImage({ file, url: URL.createObjectURL(file) });
   }
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!image) return setError("Please upload a sketch or photo.");
@@ -59,11 +67,11 @@ export default function TechPackForm() {
     const measurements: Record<string, number> = {};
     for (const m of garment.measurements) {
       const n = Number(values[m.key]);
-      if (!Number.isFinite(n) || n <= 0)
-        return setError(`Enter a valid number for "${m.label}".`);
+      const problem = checkMeasurement(garmentType, m.key, n);
+      if (problem) return setError(problem);
       measurements[m.key] = n;
     }
-    setSubmitted({
+    const input: TechPackInput = {
       garmentType,
       fabric: fabric.trim(),
       fit,
@@ -71,7 +79,25 @@ export default function TechPackForm() {
       sizeTo,
       baseSize,
       measurements,
-    });
+    };
+
+    const body = new FormData();
+    body.append("image", image.file);
+    body.append("input", JSON.stringify(input));
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/generate", { method: "POST", body });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Something went wrong.");
+      setResult(data);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not reach the server.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -87,7 +113,7 @@ export default function TechPackForm() {
               className="max-h-64 rounded"
             />
           ) : (
-            <span>Tap to upload a JPG or PNG (max 5 MB)</span>
+            <span>Tap to upload a JPG or PNG (max 4 MB)</span>
           )}
           <span className="font-medium underline">
             {image ? "Change image" : "Choose file"}
@@ -209,21 +235,13 @@ export default function TechPackForm() {
 
       <button
         type="submit"
-        className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        disabled={loading}
+        className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
       >
-        Generate tech pack
+        {loading ? "Generating… this takes up to a minute" : "Generate tech pack"}
       </button>
 
-      {submitted && (
-        <div className="rounded-lg bg-zinc-100 p-4 text-sm dark:bg-zinc-900">
-          <p className="mb-2 font-medium">
-            Form captured. The AI step comes next (not connected yet).
-          </p>
-          <pre className="overflow-x-auto">
-            {JSON.stringify(submitted, null, 2)}
-          </pre>
-        </div>
-      )}
+      {result && <TechPackView {...result} />}
     </form>
   );
 }

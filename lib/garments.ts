@@ -9,7 +9,7 @@ export const GARMENTS: Record<
   tee: {
     label: "Gym tee",
     measurements: [
-      { key: "chest", label: "Chest (1 inch below armhole)" },
+      { key: "chest", label: "Chest, flat across (1 in below armhole)" },
       { key: "length", label: "Body length (HPS to hem)" },
       { key: "shoulder", label: "Shoulder width" },
       { key: "sleeveLength", label: "Sleeve length" },
@@ -18,8 +18,8 @@ export const GARMENTS: Record<
   joggers: {
     label: "Joggers",
     measurements: [
-      { key: "waist", label: "Waist (relaxed)" },
-      { key: "hip", label: "Hip" },
+      { key: "waist", label: "Waist, flat across (relaxed)" },
+      { key: "hip", label: "Hip, flat across" },
       { key: "inseam", label: "Inseam" },
       { key: "rise", label: "Front rise" },
     ],
