@@ -4,6 +4,8 @@ AI tech pack designer for small Indian fashion brands. Upload a garment sketch, 
 
 Built for the ForgeX AI Hackathon, Mesa School of Business (October 2026).
 
+**Live prototype:** https://techpack-ai-silk.vercel.app
+
 ## Problem
 
 Small fashion brands without an in-house technical designer spend 2-3 days and ₹1,000-3,000 per style on a tech pack, and every incomplete pack costs another 1-2 days.
