@@ -1,27 +1,84 @@
+"use client";
+
+import { useState } from "react";
 import { GARMENTS, type TechPackInput } from "@/lib/garments";
 import type { AiTechPack } from "@/lib/aiSchema";
 import type { SpecTable } from "@/lib/specRules";
+import type { EditablePack } from "@/lib/techPack";
+import { downloadPdf } from "@/lib/pdf";
 
 const th = "border border-zinc-300 px-2 py-1 text-left dark:border-zinc-700";
-const td = "border border-zinc-300 px-2 py-1 dark:border-zinc-700";
+const td = "border border-zinc-300 p-0 dark:border-zinc-700";
+const cell =
+  "w-full min-w-16 bg-transparent px-2 py-1.5 text-sm focus:bg-yellow-50 focus:outline-none dark:focus:bg-zinc-800";
+const box =
+  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+const small =
+  "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
 
-// Read-only for now; editing and PDF export come next.
+function toPack(input: TechPackInput, specTable: SpecTable, ai: AiTechPack): EditablePack {
+  return {
+    title: GARMENTS[input.garmentType].label,
+    description: ai.garmentDescription,
+    fit: input.fit,
+    fabric: input.fabric,
+    sizes: specTable.sizes,
+    baseSize: input.baseSize,
+    spec: specTable.rows.map((r) => ({
+      pom: r.pom,
+      tolerance: String(r.tolerance),
+      values: Object.fromEntries(
+        specTable.sizes.map((s) => [s, String(r.values[s])]),
+      ),
+    })),
+    notes: ai.constructionNotes.map((n) => ({ ...n })),
+    trims: ai.trims.map((t) => ({
+      item: t.item,
+      specification: t.specification,
+      quantity: t.quantity,
+    })),
+    missing: [...ai.missingDetails],
+  };
+}
+
+function remove<T>(list: T[], i: number) {
+  return list.filter((_, j) => j !== i);
+}
+
 export default function TechPackView({
   input,
   specTable,
   ai,
+  sketch,
 }: {
   input: TechPackInput;
   specTable: SpecTable;
   ai: AiTechPack;
+  sketch: File;
 }) {
+  const [pack, setPack] = useState<EditablePack>(() => toPack(input, specTable, ai));
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState("");
+
+  const patch = (p: Partial<EditablePack>) => setPack((cur) => ({ ...cur, ...p }));
+
+  async function onExport() {
+    setError("");
+    setExporting(true);
+    try {
+      await downloadPdf(pack, sketch);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create the PDF.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <section className="space-y-6 border-t border-zinc-300 pt-6 dark:border-zinc-700">
-      <p
-        role="note"
-        className="rounded-lg bg-amber-100 p-3 text-sm font-medium text-amber-900"
-      >
-        Draft: verify everything before sending to the factory.
+      <p role="note" className="rounded-lg bg-amber-100 p-3 text-sm font-medium text-amber-900">
+        Draft: verify everything before sending to the factory. Every field
+        below is editable.
       </p>
 
       {!ai.imageMatchesGarmentType && (
@@ -31,14 +88,25 @@ export default function TechPackView({
         </p>
       )}
 
-      <div>
-        <h2 className="text-xl font-semibold">
-          {GARMENTS[input.garmentType].label}
-        </h2>
-        <p className="mt-1 text-sm">{ai.garmentDescription}</p>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {input.fit} fit · {input.fabric}
-        </p>
+      <div className="space-y-3">
+        <label className="block text-sm font-medium">
+          Style name
+          <input className={`${box} mt-1 text-lg font-semibold`} value={pack.title} onChange={(e) => patch({ title: e.target.value })} />
+        </label>
+        <label className="block text-sm font-medium">
+          Description
+          <textarea rows={3} className={`${box} mt-1 font-normal`} value={pack.description} onChange={(e) => patch({ description: e.target.value })} />
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-medium">
+            Fit
+            <input className={`${box} mt-1 font-normal`} value={pack.fit} onChange={(e) => patch({ fit: e.target.value })} />
+          </label>
+          <label className="block text-sm font-medium">
+            Fabric
+            <input className={`${box} mt-1 font-normal`} value={pack.fabric} onChange={(e) => patch({ fabric: e.target.value })} />
+          </label>
+        </div>
       </div>
 
       <div>
@@ -49,22 +117,29 @@ export default function TechPackView({
               <tr>
                 <th className={th}>Point of measure</th>
                 <th className={th}>Tol. ±</th>
-                {specTable.sizes.map((s) => (
+                {pack.sizes.map((s) => (
                   <th key={s} className={th}>
                     {s}
-                    {s === input.baseSize ? " (base)" : ""}
+                    {s === pack.baseSize ? " (base)" : ""}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {specTable.rows.map((r) => (
-                <tr key={r.key}>
-                  <td className={td}>{r.pom}</td>
-                  <td className={td}>{r.tolerance}</td>
-                  {specTable.sizes.map((s) => (
+              {pack.spec.map((r, i) => (
+                <tr key={i}>
+                  <td className={td}>
+                    <input aria-label="Point of measure" className={`${cell} min-w-40`} value={r.pom}
+                      onChange={(e) => patch({ spec: pack.spec.map((x, j) => (j === i ? { ...x, pom: e.target.value } : x)) })} />
+                  </td>
+                  <td className={td}>
+                    <input aria-label={`Tolerance for ${r.pom}`} inputMode="decimal" className={cell} value={r.tolerance}
+                      onChange={(e) => patch({ spec: pack.spec.map((x, j) => (j === i ? { ...x, tolerance: e.target.value } : x)) })} />
+                  </td>
+                  {pack.sizes.map((s) => (
                     <td key={s} className={td}>
-                      {r.values[s]}
+                      <input aria-label={`${r.pom}, size ${s}`} inputMode="decimal" className={cell} value={r.values[s]}
+                        onChange={(e) => patch({ spec: pack.spec.map((x, j) => (j === i ? { ...x, values: { ...x.values, [s]: e.target.value } } : x)) })} />
                     </td>
                   ))}
                 </tr>
@@ -74,53 +149,81 @@ export default function TechPackView({
         </div>
         <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
           Base size values are yours. Other sizes and tolerances come from
-          standard grading rules; confirm them with your factory.
+          standard grading rules; edit them to match your factory.
         </p>
       </div>
 
       <div>
         <h3 className="mb-2 font-semibold">Construction notes</h3>
-        <ul className="list-disc space-y-1 pl-5 text-sm">
-          {ai.constructionNotes.map((n, i) => (
-            <li key={i}>
-              <strong>{n.area}:</strong> {n.detail}
+        <ul className="space-y-2">
+          {pack.notes.map((n, i) => (
+            <li key={i} className="flex flex-col gap-2 sm:flex-row">
+              <input aria-label="Area" className={`${box} sm:w-40`} value={n.area}
+                onChange={(e) => patch({ notes: pack.notes.map((x, j) => (j === i ? { ...x, area: e.target.value } : x)) })} />
+              <textarea aria-label="Detail" rows={2} className={box} value={n.detail}
+                onChange={(e) => patch({ notes: pack.notes.map((x, j) => (j === i ? { ...x, detail: e.target.value } : x)) })} />
+              <button type="button" className={small} onClick={() => patch({ notes: remove(pack.notes, i) })}>Remove</button>
             </li>
           ))}
         </ul>
+        <button type="button" className={`${small} mt-2`} onClick={() => patch({ notes: [...pack.notes, { area: "", detail: "" }] })}>
+          Add note
+        </button>
       </div>
 
       <div>
         <h3 className="mb-2 font-semibold">Trims and materials</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr>
-                <th className={th}>Item</th>
-                <th className={th}>Specification</th>
-                <th className={th}>Qty</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ai.trims.map((t, i) => (
-                <tr key={i}>
-                  <td className={td}>{t.item}</td>
-                  <td className={td}>{t.specification}</td>
-                  <td className={td}>{t.quantity}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="space-y-2">
+          {pack.trims.map((t, i) => (
+            <li key={i} className="flex flex-col gap-2 sm:flex-row">
+              <input aria-label="Item" className={`${box} sm:w-44`} value={t.item}
+                onChange={(e) => patch({ trims: pack.trims.map((x, j) => (j === i ? { ...x, item: e.target.value } : x)) })} />
+              <textarea aria-label="Specification" rows={2} className={box} value={t.specification}
+                onChange={(e) => patch({ trims: pack.trims.map((x, j) => (j === i ? { ...x, specification: e.target.value } : x)) })} />
+              <input aria-label="Quantity" className={`${box} sm:w-40`} value={t.quantity}
+                onChange={(e) => patch({ trims: pack.trims.map((x, j) => (j === i ? { ...x, quantity: e.target.value } : x)) })} />
+              <button type="button" className={small} onClick={() => patch({ trims: remove(pack.trims, i) })}>Remove</button>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className={`${small} mt-2`} onClick={() => patch({ trims: [...pack.trims, { item: "", specification: "", quantity: "" }] })}>
+          Add trim
+        </button>
       </div>
 
       <div>
         <h3 className="mb-2 font-semibold">Still missing (the factory will ask)</h3>
-        <ul className="list-disc space-y-1 pl-5 text-sm">
-          {ai.missingDetails.map((q, i) => (
-            <li key={i}>{q}</li>
+        <ul className="space-y-2">
+          {pack.missing.map((q, i) => (
+            <li key={i} className="flex gap-2">
+              <textarea aria-label="Question" rows={2} className={box} value={q}
+                onChange={(e) => patch({ missing: pack.missing.map((x, j) => (j === i ? e.target.value : x)) })} />
+              <button type="button" className={small} onClick={() => patch({ missing: remove(pack.missing, i) })}>Done</button>
+            </li>
           ))}
         </ul>
+        <button type="button" className={`${small} mt-2`} onClick={() => patch({ missing: [...pack.missing, ""] })}>
+          Add question
+        </button>
+        <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+          Answer a question by adding the detail above, then click Done to
+          remove it from the checklist.
+        </p>
       </div>
+
+      {error && (
+        <p role="alert" className="text-sm font-medium text-red-600">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={onExport}
+        disabled={exporting}
+        className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+      >
+        {exporting ? "Creating PDF…" : "Download PDF for the factory"}
+      </button>
     </section>
   );
 }

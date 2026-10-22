@@ -33,6 +33,7 @@ export default function TechPackForm() {
     input: TechPackInput;
     specTable: SpecTable;
     ai: AiTechPack;
+    sketch: File;
   } | null>(null);
 
   const garment = GARMENTS[garmentType];
@@ -90,7 +91,7 @@ export default function TechPackForm() {
       const res = await fetch("/api/generate", { method: "POST", body });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Something went wrong.");
-      setResult(data);
+      setResult({ ...data, sketch: image.file });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not reach the server.",
@@ -241,7 +242,7 @@ export default function TechPackForm() {
         {loading ? "Generating… this takes up to a minute" : "Generate tech pack"}
       </button>
 
-      {result && <TechPackView {...result} />}
+      {result && <TechPackView key={result.ai.garmentDescription} {...result} />}
     </form>
   );
 }
