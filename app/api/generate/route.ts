@@ -1,4 +1,4 @@
-import { ApiError, GoogleGenAI } from "@google/genai";
+import { ApiError, GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { z } from "zod";
 import { AiTechPackSchema } from "@/lib/aiSchema";
 import { FITS, GARMENTS, SIZES, type TechPackInput } from "@/lib/garments";
@@ -8,7 +8,14 @@ import { buildSpecTable, checkMeasurement } from "@/lib/specRules";
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
-const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const MODELS = [
+  process.env.GEMINI_MODEL || "gemini-3.8-flash",
+  process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+];
+// Gemini sometimes answers "high demand" or hangs; give each model a short
+// deadline so a second model can still answer before the function times out.
+const ATTEMPT_TIMEOUTS_MS = [30_000, 30_000, 40_000];
 
 export const maxDuration = 120;
 
@@ -97,23 +104,43 @@ export async function POST(request: Request) {
 
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: image.type, data: imageData } },
-            { text: `Write the tech pack content for this garment.\n\n${facts}` },
-          ],
+    const request = (model: string, timeoutMs: number) =>
+      ai.models.generateContent({
+        model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: image.type, data: imageData } },
+              { text: `Write the tech pack content for this garment.\n\n${facts}` },
+            ],
+          },
+        ],
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          responseMimeType: "application/json",
+          responseJsonSchema: z.toJSONSchema(AiTechPackSchema),
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          abortSignal: AbortSignal.timeout(timeoutMs),
         },
-      ],
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: "application/json",
-        responseJsonSchema: z.toJSONSchema(AiTechPackSchema),
-      },
-    });
+      });
+
+    let response: Awaited<ReturnType<typeof request>> | undefined;
+    let lastError: unknown;
+    for (const [i, model] of MODELS.entries()) {
+      try {
+        response = await request(model, ATTEMPT_TIMEOUTS_MS[i]);
+        break;
+      } catch (error) {
+        lastError = error;
+        const retryable =
+          !(error instanceof ApiError) ||
+          [429, 500, 503, 504].includes(error.status);
+        console.error(`Gemini attempt failed (${model})`, error instanceof Error ? error.message : error);
+        if (!retryable) throw error;
+      }
+    }
+    if (!response) throw lastError;
 
     if (response.promptFeedback?.blockReason)
       return fail("The AI could not process this image. Try a different sketch or photo.", 422);
@@ -130,12 +157,14 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof ApiError) {
       console.error("Gemini API error", error.status, error.message);
-      if (error.status === 429)
+      if (error.status === 429 || error.status === 503)
         return fail("The AI is busy right now. Please try again in a minute.", 429);
       if (error.status === 401 || error.status === 403 || error.status === 400)
         return fail("The Gemini API key was rejected or the request was invalid. Check GEMINI_API_KEY.", 500);
       return fail("The AI request failed. Please try again.", 502);
     }
+    if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))
+      return fail("The AI took too long to answer. Please try again.", 504);
     if (error instanceof SyntaxError)
       return fail("The AI returned an unreadable answer. Please try again.", 502);
     console.error(error);

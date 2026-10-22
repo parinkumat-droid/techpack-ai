@@ -90,7 +90,11 @@ export default function TechPackForm() {
     try {
       const res = await fetch("/api/generate", { method: "POST", body });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error ?? "Something went wrong.");
+      if (!res.ok)
+        throw new Error(
+          data?.error ??
+            "The server took too long or failed. Please try again in a minute.",
+        );
       setResult({ ...data, sketch: image.file });
     } catch (err) {
       setError(

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # keep the template, never the real key
 !.env.example
+
+# private test sketches (keep out of the public repo)
+/test-sketches/
