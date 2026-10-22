@@ -5,5 +5,6 @@
 - Set up the dev environment (Node.js, git, GitHub CLI).
 - Scaffolded the Next.js app and created this repository.
 - Built the input page: sketch/photo upload with preview, garment type (tee or joggers), fit, fabric, size range, base size and key measurements, with validation. Works at phone width. The AI step is not connected yet.
-- Added the server route `/api/generate`: it validates the upload and form, builds the spec table from hard-coded tee and jogger grading rules (base-size values come from the user), and asks Claude (vision) for the description, construction notes, trims and a missing-details checklist as structured JSON. The key is read from an environment variable.
+- Added the server route `/api/generate`: it validates the upload and form, builds the spec table from hard-coded tee and jogger grading rules (base-size values come from the user), and asks Gemini (vision, gemini-3.8-flash) for the description, construction notes, trims and a missing-details checklist as structured JSON. The key is read from an environment variable.
 - Added a read-only tech pack view with a "verify before sending to the factory" banner. Not yet tested with a real API key.
+- Switched the AI step from Claude to Gemini (gemini-3.8-flash; the older gemini-2.5-flash is closed to new keys). Tested end to end with a sample tee sketch: structured output came back in about 48 seconds and the page rendered the spec table, construction notes, trims and missing-details list.

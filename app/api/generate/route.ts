@@ -1,13 +1,14 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { ApiError, GoogleGenAI } from "@google/genai";
+import { z } from "zod";
 import { AiTechPackSchema } from "@/lib/aiSchema";
 import { FITS, GARMENTS, SIZES, type TechPackInput } from "@/lib/garments";
 import { buildSpecTable, checkMeasurement } from "@/lib/specRules";
 
 // Vercel serverless functions reject request bodies over 4.5 MB.
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
 export const maxDuration = 120;
 
@@ -28,9 +29,9 @@ function fail(message: string, status = 400) {
 }
 
 export async function POST(request: Request) {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     return fail(
-      "The server has no ANTHROPIC_API_KEY. Add it to .env.local (or Vercel environment variables).",
+      "The server has no GEMINI_API_KEY. Add it to .env.local (or Vercel environment variables).",
       500,
     );
   }
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   const image = form.get("image");
   if (!(image instanceof File)) return fail("Please upload a sketch or photo.");
   if (!IMAGE_TYPES.includes(image.type as ImageType))
-    return fail("Image must be a JPG, PNG, GIF or WebP file.");
+    return fail("Image must be a JPG, PNG or WebP file.");
   if (image.size > MAX_IMAGE_BYTES)
     return fail("Image is over 4 MB. Please use a smaller one.");
 
@@ -94,49 +95,49 @@ export async function POST(request: Request) {
     `Size range: ${input.sizeFrom} to ${input.sizeTo} (base size ${input.baseSize})`,
   ].join("\n");
 
-  const client = new Anthropic();
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
-    const response = await client.messages.parse({
-      model: "claude-opus-5-5",
-      max_tokens: 16000,
-      system: SYSTEM_PROMPT,
-      output_config: {
-        effort: "medium",
-        format: zodOutputFormat(AiTechPackSchema),
-      },
-      messages: [
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
         {
           role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: image.type as ImageType,
-                data: imageData,
-              },
-            },
-            { type: "text", text: `Write the tech pack content for this garment.\n\n${facts}` },
+          parts: [
+            { inlineData: { mimeType: image.type, data: imageData } },
+            { text: `Write the tech pack content for this garment.\n\n${facts}` },
           ],
         },
       ],
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        responseJsonSchema: z.toJSONSchema(AiTechPackSchema),
+      },
     });
 
-    if (response.stop_reason === "refusal")
+    if (response.promptFeedback?.blockReason)
       return fail("The AI could not process this image. Try a different sketch or photo.", 422);
-    if (!response.parsed_output)
-      return fail("The AI returned an unreadable answer. Please try again.", 502);
 
-    return Response.json({ input, specTable, ai: response.parsed_output });
+    const parsed = AiTechPackSchema.safeParse(
+      JSON.parse(response.text ?? "null"),
+    );
+    if (!parsed.success) {
+      console.error("Unexpected AI output", parsed.error.issues);
+      return fail("The AI returned an unreadable answer. Please try again.", 502);
+    }
+
+    return Response.json({ input, specTable, ai: parsed.data });
   } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError)
-      return fail("The Anthropic API key was rejected. Check ANTHROPIC_API_KEY.", 500);
-    if (error instanceof Anthropic.RateLimitError)
-      return fail("The AI is busy right now. Please try again in a minute.", 429);
-    if (error instanceof Anthropic.APIError) {
-      console.error("Anthropic API error", error.status, error.message);
+    if (error instanceof ApiError) {
+      console.error("Gemini API error", error.status, error.message);
+      if (error.status === 429)
+        return fail("The AI is busy right now. Please try again in a minute.", 429);
+      if (error.status === 401 || error.status === 403 || error.status === 400)
+        return fail("The Gemini API key was rejected or the request was invalid. Check GEMINI_API_KEY.", 500);
       return fail("The AI request failed. Please try again.", 502);
     }
+    if (error instanceof SyntaxError)
+      return fail("The AI returned an unreadable answer. Please try again.", 502);
     console.error(error);
     return fail("Something went wrong. Please try again.", 500);
   }
