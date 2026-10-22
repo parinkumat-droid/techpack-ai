@@ -5,7 +5,7 @@ import {
   type TechPackInput,
 } from "./garments";
 
-// Hard-coded MVP rules for a tee and joggers. All values are cm and are
+// Hard-coded MVP rules for seven garment types. All values are cm and are
 // typical starting points, NOT factory-approved. The PDF says "verify before
 // sending to the factory" and the brand's manufacturer should confirm them.
 type Rule = {
@@ -30,6 +30,38 @@ export const RULES: Record<GarmentType, Record<string, Rule>> = {
     hip: { grade: 2.5, tolerance: 1.0, min: 35, max: 70 },
     inseam: { grade: 1.0, tolerance: 1.0, min: 55, max: 95 },
     rise: { grade: 0.6, tolerance: 0.5, min: 20, max: 40 },
+  },
+  shirt: {
+    chest: { grade: 2.5, tolerance: 1.0, min: 40, max: 75 },
+    length: { grade: 1.5, tolerance: 1.0, min: 55, max: 95 },
+    shoulder: { grade: 1.0, tolerance: 0.5, min: 35, max: 60 },
+    sleeveLength: { grade: 0.8, tolerance: 0.7, min: 15, max: 75 },
+  },
+  hoodie: {
+    chest: { grade: 2.5, tolerance: 1.0, min: 40, max: 85 },
+    length: { grade: 1.5, tolerance: 1.0, min: 50, max: 90 },
+    shoulder: { grade: 1.0, tolerance: 0.7, min: 35, max: 65 },
+    sleeveLength: { grade: 1.0, tolerance: 0.7, min: 45, max: 75 },
+  },
+  jacket: {
+    chest: { grade: 2.5, tolerance: 1.0, min: 40, max: 85 },
+    length: { grade: 1.5, tolerance: 1.0, min: 50, max: 100 },
+    shoulder: { grade: 1.0, tolerance: 0.5, min: 35, max: 65 },
+    sleeveLength: { grade: 1.0, tolerance: 0.7, min: 45, max: 75 },
+  },
+  shorts: {
+    waist: { grade: 2.5, tolerance: 1.0, min: 25, max: 60 },
+    hip: { grade: 2.5, tolerance: 1.0, min: 35, max: 70 },
+    inseam: { grade: 0.6, tolerance: 0.7, min: 8, max: 40 },
+    rise: { grade: 0.6, tolerance: 0.5, min: 20, max: 40 },
+  },
+  jeans: {
+    waist: { grade: 2.5, tolerance: 1.0, min: 25, max: 60 },
+    hip: { grade: 2.5, tolerance: 1.0, min: 35, max: 70 },
+    thigh: { grade: 1.5, tolerance: 0.7, min: 20, max: 45 },
+    rise: { grade: 0.6, tolerance: 0.5, min: 20, max: 40 },
+    inseam: { grade: 1.0, tolerance: 1.0, min: 55, max: 95 },
+    legOpening: { grade: 0.6, tolerance: 0.5, min: 14, max: 30 },
   },
 };
 

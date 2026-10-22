@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   }
 
   const garment = GARMENTS[input?.garmentType];
-  if (!garment) return fail("Choose tee or joggers. Other garments are not supported yet.");
+  if (!garment) return fail("Choose one of the listed garment types.");
   if (
     !FITS.includes(input.fit) ||
     !SIZES.includes(input.sizeFrom) ||
@@ -97,6 +97,7 @@ export async function POST(request: Request) {
 
   const facts = [
     `Garment: ${garment.label}`,
+    `Components to look for (only describe the ones you can see; ask about the rest): ${garment.components}`,
     `Fit: ${input.fit}`,
     `Fabric: ${input.fabric.trim()}`,
     `Size range: ${input.sizeFrom} to ${input.sizeTo} (base size ${input.baseSize})`,
