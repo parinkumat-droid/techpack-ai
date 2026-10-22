@@ -9,8 +9,8 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
 const MODELS = [
-  process.env.GEMINI_MODEL || "gemini-3.8-flash",
-  process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash",
+  process.env.GEMINI_MODEL || "gemini-3.5-flash",
+  process.env.GEMINI_FALLBACK_MODEL || "gemini-3.8-flash",
   "gemini-3.5-flash-lite",
 ];
 // Gemini sometimes answers "high demand" or hangs; give each model a short
