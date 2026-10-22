@@ -1,0 +1,229 @@
+"use client";
+
+import { useState } from "react";
+import {
+  FITS,
+  GARMENTS,
+  SIZES,
+  type GarmentType,
+  type TechPackInput,
+} from "@/lib/garments";
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+const field =
+  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+const label = "mb-1 block text-sm font-medium";
+
+export default function TechPackForm() {
+  const [garmentType, setGarmentType] = useState<GarmentType>("tee");
+  const [fabric, setFabric] = useState("");
+  const [fit, setFit] = useState<TechPackInput["fit"]>("Regular");
+  const [sizeFrom, setSizeFrom] = useState<TechPackInput["sizeFrom"]>("S");
+  const [sizeTo, setSizeTo] = useState<TechPackInput["sizeTo"]>("XL");
+  const [baseSize, setBaseSize] = useState<TechPackInput["baseSize"]>("M");
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [image, setImage] = useState<{ file: File; url: string } | null>(null);
+  const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState<TechPackInput | null>(null);
+
+  const garment = GARMENTS[garmentType];
+
+  function onImage(file: File | undefined) {
+    setError("");
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file (JPG or PNG).");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError("That image is over 5 MB. Please pick a smaller one.");
+      return;
+    }
+    if (image) URL.revokeObjectURL(image.url);
+    setImage({ file, url: URL.createObjectURL(file) });
+  }
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!image) return setError("Please upload a sketch or photo.");
+    if (SIZES.indexOf(sizeFrom) > SIZES.indexOf(sizeTo))
+      return setError("Size range: the first size must be smaller than the last.");
+    if (
+      SIZES.indexOf(baseSize) < SIZES.indexOf(sizeFrom) ||
+      SIZES.indexOf(baseSize) > SIZES.indexOf(sizeTo)
+    )
+      return setError("Base size must be inside your size range.");
+
+    const measurements: Record<string, number> = {};
+    for (const m of garment.measurements) {
+      const n = Number(values[m.key]);
+      if (!Number.isFinite(n) || n <= 0)
+        return setError(`Enter a valid number for "${m.label}".`);
+      measurements[m.key] = n;
+    }
+    setSubmitted({
+      garmentType,
+      fabric: fabric.trim(),
+      fit,
+      sizeFrom,
+      sizeTo,
+      baseSize,
+      measurements,
+    });
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-6">
+      <div>
+        <span className={label}>Sketch or photo</span>
+        <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-600 hover:border-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+          {image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={image.url}
+              alt="Uploaded garment sketch preview"
+              className="max-h-64 rounded"
+            />
+          ) : (
+            <span>Tap to upload a JPG or PNG (max 5 MB)</span>
+          )}
+          <span className="font-medium underline">
+            {image ? "Change image" : "Choose file"}
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={(e) => onImage(e.target.files?.[0])}
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="garment" className={label}>
+            Garment type
+          </label>
+          <select
+            id="garment"
+            className={field}
+            value={garmentType}
+            onChange={(e) => {
+              setGarmentType(e.target.value as GarmentType);
+              setValues({});
+            }}
+          >
+            {Object.entries(GARMENTS).map(([k, g]) => (
+              <option key={k} value={k}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="fit" className={label}>
+            Fit
+          </label>
+          <select
+            id="fit"
+            className={field}
+            value={fit}
+            onChange={(e) => setFit(e.target.value as typeof fit)}
+          >
+            {FITS.map((f) => (
+              <option key={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label htmlFor="fabric" className={label}>
+          Fabric
+        </label>
+        <input
+          id="fabric"
+          required
+          className={field}
+          placeholder="e.g. 180 GSM cotton single jersey"
+          value={fabric}
+          onChange={(e) => setFabric(e.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        {(
+          [
+            ["From size", sizeFrom, setSizeFrom],
+            ["To size", sizeTo, setSizeTo],
+            ["Base size", baseSize, setBaseSize],
+          ] as const
+        ).map(([text, val, set]) => (
+          <div key={text}>
+            <label className={label}>{text}</label>
+            <select
+              className={field}
+              value={val}
+              onChange={(e) => set(e.target.value as never)}
+            >
+              {SIZES.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+
+      <fieldset>
+        <legend className={label}>
+          Key measurements for base size {baseSize} (in cm)
+        </legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {garment.measurements.map((m) => (
+            <div key={m.key}>
+              <label htmlFor={m.key} className="mb-1 block text-sm">
+                {m.label}
+              </label>
+              <input
+                id={m.key}
+                inputMode="decimal"
+                className={field}
+                placeholder="cm"
+                value={values[m.key] ?? ""}
+                onChange={(e) =>
+                  setValues((v) => ({ ...v, [m.key]: e.target.value }))
+                }
+              />
+            </div>
+          ))}
+        </div>
+      </fieldset>
+
+      {error && (
+        <p role="alert" className="text-sm font-medium text-red-600">
+          {error}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+      >
+        Generate tech pack
+      </button>
+
+      {submitted && (
+        <div className="rounded-lg bg-zinc-100 p-4 text-sm dark:bg-zinc-900">
+          <p className="mb-2 font-medium">
+            Form captured. The AI step comes next (not connected yet).
+          </p>
+          <pre className="overflow-x-auto">
+            {JSON.stringify(submitted, null, 2)}
+          </pre>
+        </div>
+      )}
+    </form>
+  );
+}
