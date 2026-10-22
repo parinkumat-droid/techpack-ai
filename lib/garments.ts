@@ -7,7 +7,7 @@ export const GARMENTS: Record<
   { label: string; measurements: Measurement[] }
 > = {
   tee: {
-    label: "Gym tee",
+    label: "Tee",
     measurements: [
       { key: "chest", label: "Chest, flat across (1 in below armhole)" },
       { key: "length", label: "Body length (HPS to hem)" },

@@ -5,7 +5,7 @@ import {
   type TechPackInput,
 } from "./garments";
 
-// Hard-coded MVP rules for a gym tee and joggers. All values are cm and are
+// Hard-coded MVP rules for a tee and joggers. All values are cm and are
 // typical starting points, NOT factory-approved. The PDF says "verify before
 // sending to the factory" and the brand's manufacturer should confirm them.
 type Rule = {
