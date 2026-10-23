@@ -1,11 +1,11 @@
 import { ApiError, GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { z } from "zod";
 import { AiTechPackSchema } from "@/lib/aiSchema";
-import { FITS, GARMENTS, SIZES, type TechPackInput } from "@/lib/garments";
+import { FITS, GARMENTS, GENDERS, SIZES, type TechPackInput } from "@/lib/garments";
 import { buildSpecTable, checkMeasurement } from "@/lib/specRules";
 
 // Vercel serverless functions reject request bodies over 4.5 MB.
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // front + back together
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
 const MODELS = [
@@ -21,10 +21,14 @@ export const maxDuration = 120;
 
 const SYSTEM_PROMPT = `You are an experienced technical designer at an apparel factory in India, helping a small fashion brand write a tech pack.
 
-You receive a garment sketch or photo plus facts from the brand. Write the technical content a designer would write: a short garment description, construction and stitching notes, a bill of materials (BOM) for everything except the main fabric, and a checklist of details a factory is likely to ask about.
+You receive a garment sketch or photo plus facts from the brand. Write the technical content a designer would write: a short garment description, callouts that label the construction features on the image, construction and stitching notes, an artwork list, a thread sheet, a bill of materials (BOM) for everything except the main fabric, and a checklist of details a factory is likely to ask about.
 
 Rules:
-- BOM: list each trim, label, secondary fabric (rib, lining, interlining) and packaging item as a row with category (Trim, Label, Fabric, Packaging or Thread), item, specification, placement, colour and quantity per garment. Do not list the main fabric: the brand already gave it. Use "TBC" for any colour, size or quantity you cannot tell from the image or the facts, and write quantities as estimates, for example "1 pc" or "approx. 45 cm".
+- Callouts (frontCallouts, backCallouts): label the visible construction features the way a factory tech pack does, in short upper-case phrases such as "1.5 CM 1X1 NECK RIB", "MAIN LABEL", "SCREEN PRINT ARTWORK", "2 CM SELF FOLD HEM WITH DNLS", "CUT & SEW". Give 4 to 9 callouts per view. x and y are where that feature sits on that image, as fractions of its width and height from the top-left corner, and must land on the garment, not on the background or the model's body. If no back image was provided, backCallouts must be an empty array. Do not label a feature you cannot see.
+- designSummary: two to five upper-case words such as "SOLID" or "SOLID WITH NECK PRINT".
+- artwork: one row per print, embroidery or woven label artwork you can see (name, technique such as screen print or embroidery, placement, size, colour). Use "TBC" for size unless the facts state it. An empty array if there is none.
+- threads: one to three rows for the thread sheet (description such as "DTM to body, stitch all over", tex or count such as "80s TKT top stitch, 120s TKT bobbin", spi such as "10-12", comment). These are suggested standards for the brand to confirm.
+- BOM: include a main label, a size label, a wash care label and a hand tag when the garment type normally has them. List each trim, label, secondary fabric (rib, lining, interlining) and packaging item as a row with category (Trim, Label, Fabric, Packaging or Thread), item, specification, placement, colour and quantity per garment. Do not list the main fabric: the brand already gave it. Use "TBC" for any colour, size or quantity you cannot tell from the image or the facts, and write quantities as estimates, for example "1 pc" or "approx. 45 cm".
 - Do not output any measurements. The spec table is built separately from the brand's own numbers.
 - Only describe what you can see or what the brand told you. If the image does not show something (for example the neckline finish, hem or print), do not guess: add a question to missingDetails instead.
 - Use standard factory terms (overlock, coverstitch, flatlock, bartack, binding) and name the thread, stitch type and finish where the garment type calls for it. Suggested values are drafts for the brand to verify.
@@ -68,6 +72,7 @@ export async function POST(request: Request) {
   const garment = GARMENTS[input?.garmentType];
   if (!garment) return fail("Choose one of the listed garment types.");
   if (
+    (input.gender !== undefined && !GENDERS.includes(input.gender)) ||
     !FITS.includes(input.fit) ||
     !SIZES.includes(input.sizeFrom) ||
     !SIZES.includes(input.sizeTo) ||
@@ -96,9 +101,23 @@ export async function POST(request: Request) {
   const specTable = buildSpecTable(input);
   const imageData = Buffer.from(await image.arrayBuffer()).toString("base64");
 
+  const back = form.get("backImage");
+  let backData: { mimeType: ImageType; data: string } | null = null;
+  if (back instanceof File && back.size > 0) {
+    if (!IMAGE_TYPES.includes(back.type as ImageType))
+      return fail("The back view must be a JPG, PNG or WebP file.");
+    if (image.size + back.size > MAX_IMAGE_BYTES)
+      return fail("The two images together are over 4 MB. Please use smaller ones.");
+    backData = {
+      mimeType: back.type as ImageType,
+      data: Buffer.from(await back.arrayBuffer()).toString("base64"),
+    };
+  }
+
   const facts = [
     `Garment: ${garment.label}`,
     `Components to look for (only describe the ones you can see; ask about the rest): ${garment.components}`,
+    ...(input.gender ? [`Intended for: ${input.gender}`] : []),
     `Fit: ${input.fit}`,
     `Fabric: ${input.fabric.trim()}`,
     `Size range: ${input.sizeFrom} to ${input.sizeTo} (base size ${input.baseSize})`,
@@ -113,7 +132,14 @@ export async function POST(request: Request) {
           {
             role: "user",
             parts: [
+              { text: "FRONT VIEW image:" },
               { inlineData: { mimeType: image.type, data: imageData } },
+              ...(backData
+                ? [
+                    { text: "BACK VIEW image:" },
+                    { inlineData: backData },
+                  ]
+                : [{ text: "No back view image was provided." }]),
               { text: `Write the tech pack content for this garment.\n\n${facts}` },
             ],
           },
@@ -155,7 +181,8 @@ export async function POST(request: Request) {
       return fail("The AI returned an unreadable answer. Please try again.", 502);
     }
 
-    return Response.json({ input, specTable, ai: parsed.data });
+    const data = backData ? parsed.data : { ...parsed.data, backCallouts: [] };
+    return Response.json({ input, specTable, ai: data });
   } catch (error) {
     if (error instanceof ApiError) {
       console.error("Gemini API error", error.status, error.message);

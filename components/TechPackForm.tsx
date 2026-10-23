@@ -4,13 +4,15 @@ import { useState } from "react";
 import {
   FITS,
   GARMENTS,
+  GENDERS,
   SIZES,
   type GarmentType,
   type TechPackInput,
 } from "@/lib/garments";
 import { checkMeasurement, type SpecTable } from "@/lib/specRules";
 import type { AiTechPack } from "@/lib/aiSchema";
-import TechPackView from "@/components/TechPackView";
+import TechPackView, { type PackMeta } from "@/components/TechPackView";
+import type { PackImages } from "@/lib/techPack";
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
@@ -26,32 +28,45 @@ export default function TechPackForm() {
   const [sizeTo, setSizeTo] = useState<TechPackInput["sizeTo"]>("XL");
   const [baseSize, setBaseSize] = useState<TechPackInput["baseSize"]>("M");
   const [values, setValues] = useState<Record<string, string>>({});
+  const [gender, setGender] = useState<string>("Men");
+  const [brand, setBrand] = useState("");
+  const [styleId, setStyleId] = useState("");
+  const [logo, setLogo] = useState<File | null>(null);
   const [image, setImage] = useState<{ file: File; url: string } | null>(null);
+  const [backImage, setBackImage] = useState<{ file: File; url: string } | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
     input: TechPackInput;
     specTable: SpecTable;
     ai: AiTechPack;
-    sketch: File;
+    images: PackImages;
+    frontUrl: string;
+    backUrl: string | null;
+    meta: PackMeta;
   } | null>(null);
 
   const garment = GARMENTS[garmentType];
 
-  function onImage(file: File | undefined) {
+  function pickImage(
+    file: File | undefined,
+    other: File | undefined,
+    set: (v: { file: File; url: string }) => void,
+  ) {
     setError("");
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       setError("Please choose an image file (JPG or PNG).");
       return;
     }
-    if (file.size > MAX_IMAGE_BYTES) {
-      setError("That image is over 4 MB. Please pick a smaller one.");
+    if (file.size + (other?.size ?? 0) > MAX_IMAGE_BYTES) {
+      setError("The front and back images together must be under 4 MB.");
       return;
     }
-    if (image) URL.revokeObjectURL(image.url);
-    setImage({ file, url: URL.createObjectURL(file) });
+    set({ file, url: URL.createObjectURL(file) });
   }
+  const onImage = (f: File | undefined) => pickImage(f, backImage?.file, setImage);
+  const onBackImage = (f: File | undefined) => pickImage(f, image?.file, setBackImage);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,6 +89,7 @@ export default function TechPackForm() {
     }
     const input: TechPackInput = {
       garmentType,
+      gender: gender ? (gender as TechPackInput["gender"]) : undefined,
       fabric: fabric.trim(),
       fit,
       sizeFrom,
@@ -84,6 +100,7 @@ export default function TechPackForm() {
 
     const body = new FormData();
     body.append("image", image.file);
+    if (backImage) body.append("backImage", backImage.file);
     body.append("input", JSON.stringify(input));
     setLoading(true);
     setResult(null);
@@ -95,7 +112,13 @@ export default function TechPackForm() {
           data?.error ??
             "The server took too long or failed. Please try again in a minute.",
         );
-      setResult({ ...data, sketch: image.file });
+      setResult({
+        ...data,
+        images: { front: image.file, back: backImage?.file ?? null, logo },
+        frontUrl: image.url,
+        backUrl: backImage?.url ?? null,
+        meta: { brand: brand.trim(), styleId: styleId.trim(), gender },
+      });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not reach the server.",
@@ -108,7 +131,7 @@ export default function TechPackForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-6">
       <div>
-        <span className={label}>Sketch or photo</span>
+        <span className={label}>Front view (sketch or photo)</span>
         <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-600 hover:border-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -130,6 +153,43 @@ export default function TechPackForm() {
             onChange={(e) => onImage(e.target.files?.[0])}
           />
         </label>
+      </div>
+
+      <div>
+        <span className={label}>Back view (optional)</span>
+        <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 p-4 text-center text-sm text-zinc-600 hover:border-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+          {backImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={backImage.url} alt="Back view preview" className="max-h-48 rounded" />
+          ) : (
+            <span>Add a back view to get a back-view sheet</span>
+          )}
+          <span className="font-medium underline">{backImage ? "Change image" : "Choose file"}</span>
+          <input type="file" accept="image/*" className="sr-only" onChange={(e) => onBackImage(e.target.files?.[0])} />
+        </label>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div>
+          <label htmlFor="brand" className={label}>Brand name</label>
+          <input id="brand" className={field} placeholder="e.g. FSS" value={brand} onChange={(e) => setBrand(e.target.value)} />
+        </div>
+        <div>
+          <label htmlFor="styleId" className={label}>Style ID</label>
+          <input id="styleId" className={field} placeholder="e.g. FSS_MEN_TS_04" value={styleId} onChange={(e) => setStyleId(e.target.value)} />
+        </div>
+        <div>
+          <label htmlFor="gender" className={label}>For</label>
+          <select id="gender" className={field} value={gender} onChange={(e) => setGender(e.target.value)}>
+            {GENDERS.map((g) => (
+              <option key={g}>{g}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label htmlFor="logo" className={label}>Brand logo (optional, used in the PDF header)</label>
+        <input id="logo" type="file" accept="image/*" className="block w-full text-sm" onChange={(e) => setLogo(e.target.files?.[0] ?? null)} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

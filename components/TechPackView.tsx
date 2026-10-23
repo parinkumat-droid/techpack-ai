@@ -4,7 +4,7 @@ import { useState } from "react";
 import { GARMENTS, type TechPackInput } from "@/lib/garments";
 import type { AiTechPack } from "@/lib/aiSchema";
 import type { SpecTable } from "@/lib/specRules";
-import type { BomRow, EditablePack } from "@/lib/techPack";
+import type { BomRow, Callout, EditablePack, PackImages } from "@/lib/techPack";
 import { downloadBomCsv } from "@/lib/bomCsv";
 import { downloadPdf } from "@/lib/pdf";
 
@@ -16,10 +16,24 @@ const box =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
 const small =
   "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
+const h3 = "mb-2 font-semibold";
 
-function toPack(input: TechPackInput, specTable: SpecTable, ai: AiTechPack): EditablePack {
+export type PackMeta = { brand: string; styleId: string; gender: string };
+
+function toPack(
+  input: TechPackInput,
+  specTable: SpecTable,
+  ai: AiTechPack,
+  meta: PackMeta,
+): EditablePack {
+  const label = GARMENTS[input.garmentType].label;
+  const gender = meta.gender === "Men" ? "Mens" : meta.gender === "Women" ? "Womens" : meta.gender;
   return {
-    title: GARMENTS[input.garmentType].label,
+    brand: meta.brand,
+    styleId: meta.styleId || "STYLE-001",
+    category: [gender, label].filter(Boolean).join(" "),
+    designSummary: ai.designSummary,
+    title: label,
     description: ai.garmentDescription,
     fit: input.fit,
     fabric: input.fabric,
@@ -28,10 +42,12 @@ function toPack(input: TechPackInput, specTable: SpecTable, ai: AiTechPack): Edi
     spec: specTable.rows.map((r) => ({
       pom: r.pom,
       tolerance: String(r.tolerance),
-      values: Object.fromEntries(
-        specTable.sizes.map((s) => [s, String(r.values[s])]),
-      ),
+      values: Object.fromEntries(specTable.sizes.map((s) => [s, String(r.values[s])])),
     })),
+    frontCallouts: ai.frontCallouts.map((c) => ({ ...c })),
+    backCallouts: ai.backCallouts.map((c) => ({ ...c })),
+    artwork: ai.artwork.map((a) => ({ ...a })),
+    threads: ai.threads.map((t) => ({ ...t })),
     notes: ai.constructionNotes.map((n) => ({ ...n })),
     bom: [
       {
@@ -52,18 +68,85 @@ function remove<T>(list: T[], i: number) {
   return list.filter((_, j) => j !== i);
 }
 
+function CalloutEditor({
+  title,
+  url,
+  callouts,
+  onChange,
+}: {
+  title: string;
+  url: string;
+  callouts: Callout[];
+  onChange: (next: Callout[]) => void;
+}) {
+  const pct = (n: number) => String(Math.round(n * 100));
+  const set = (i: number, patch: Partial<Callout>) =>
+    onChange(callouts.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  const num = (v: string) => Math.min(1, Math.max(0, Number(v) / 100 || 0));
+  return (
+    <div>
+      <h3 className={h3}>{title}</h3>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="relative w-full max-w-sm self-start">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={`${title} with callout markers`} className="block w-full rounded-lg border border-zinc-300 dark:border-zinc-700" />
+          {callouts.map((c, i) => (
+            <span
+              key={i}
+              className="pointer-events-none absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-red-600 bg-white/90 text-[10px] font-bold text-red-700"
+              style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%` }}
+            >
+              {i + 1}
+            </span>
+          ))}
+        </div>
+        <div className="space-y-2">
+          {callouts.map((c, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2">
+              <span className="w-5 text-sm font-semibold text-red-700">{i + 1}</span>
+              <input aria-label={`${title} callout ${i + 1} label`} className={`${box} min-w-40 flex-1`} value={c.label} onChange={(e) => set(i, { label: e.target.value })} />
+              <label className="text-xs">
+                X%
+                <input aria-label={`${title} callout ${i + 1} x`} inputMode="numeric" className={`${box} ml-1 w-16`} value={pct(c.x)} onChange={(e) => set(i, { x: num(e.target.value) })} />
+              </label>
+              <label className="text-xs">
+                Y%
+                <input aria-label={`${title} callout ${i + 1} y`} inputMode="numeric" className={`${box} ml-1 w-16`} value={pct(c.y)} onChange={(e) => set(i, { y: num(e.target.value) })} />
+              </label>
+              <button type="button" className={small} onClick={() => onChange(remove(callouts, i))}>Remove</button>
+            </div>
+          ))}
+          <button type="button" className={small} onClick={() => onChange([...callouts, { label: "", x: 0.5, y: 0.5 }])}>
+            Add callout
+          </button>
+          <p className="text-xs text-zinc-600 dark:text-zinc-400">
+            X% and Y% place each marker on the image (0 is the top-left). The
+            PDF draws red arrows from these points to the labels.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TechPackView({
   input,
   specTable,
   ai,
-  sketch,
+  images,
+  frontUrl,
+  backUrl,
+  meta,
 }: {
   input: TechPackInput;
   specTable: SpecTable;
   ai: AiTechPack;
-  sketch: File;
+  images: PackImages;
+  frontUrl: string;
+  backUrl: string | null;
+  meta: PackMeta;
 }) {
-  const [pack, setPack] = useState<EditablePack>(() => toPack(input, specTable, ai));
+  const [pack, setPack] = useState<EditablePack>(() => toPack(input, specTable, ai, meta));
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
 
@@ -73,7 +156,7 @@ export default function TechPackView({
     setError("");
     setExporting(true);
     try {
-      await downloadPdf(pack, sketch);
+      await downloadPdf(pack, images);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create the PDF.");
     } finally {
@@ -81,11 +164,18 @@ export default function TechPackView({
     }
   }
 
+  const head = (key: "brand" | "styleId" | "category" | "designSummary" | "fit" | "fabric", text: string) => (
+    <label className="block text-sm font-medium">
+      {text}
+      <input className={`${box} mt-1 font-normal`} value={pack[key]} onChange={(e) => patch({ [key]: e.target.value })} />
+    </label>
+  );
+
   return (
-    <section className="space-y-6 border-t border-zinc-300 pt-6 dark:border-zinc-700">
+    <section className="space-y-8 border-t border-zinc-300 pt-6 dark:border-zinc-700">
       <p role="note" className="rounded-lg bg-amber-100 p-3 text-sm font-medium text-amber-900">
         Draft: verify everything before sending to the factory. Every field
-        below is editable.
+        below is editable, and the PDF prints exactly what you see.
       </p>
 
       {!ai.imageMatchesGarmentType && (
@@ -95,29 +185,72 @@ export default function TechPackView({
         </p>
       )}
 
-      <div className="space-y-3">
-        <label className="block text-sm font-medium">
-          Style name
-          <input className={`${box} mt-1 text-lg font-semibold`} value={pack.title} onChange={(e) => patch({ title: e.target.value })} />
-        </label>
-        <label className="block text-sm font-medium">
-          Description
-          <textarea rows={3} className={`${box} mt-1 font-normal`} value={pack.description} onChange={(e) => patch({ description: e.target.value })} />
-        </label>
+      <div>
+        <h3 className={h3}>Sheet header</h3>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-medium">
-            Fit
-            <input className={`${box} mt-1 font-normal`} value={pack.fit} onChange={(e) => patch({ fit: e.target.value })} />
-          </label>
-          <label className="block text-sm font-medium">
-            Fabric
-            <input className={`${box} mt-1 font-normal`} value={pack.fabric} onChange={(e) => patch({ fabric: e.target.value })} />
-          </label>
+          {head("brand", "Brand")}
+          {head("styleId", "Style ID")}
+          {head("category", "Category")}
+          {head("designSummary", "Description (for example SOLID)")}
+          {head("fabric", "Fabric")}
+          {head("fit", "Fit")}
         </div>
+        <label className="mt-3 block text-sm font-medium">
+          Garment description
+          <textarea rows={2} className={`${box} mt-1 font-normal`} value={pack.description} onChange={(e) => patch({ description: e.target.value })} />
+        </label>
+      </div>
+
+      <CalloutEditor title="Front view" url={frontUrl} callouts={pack.frontCallouts} onChange={(c) => patch({ frontCallouts: c })} />
+      {backUrl && (
+        <CalloutEditor title="Back view" url={backUrl} callouts={pack.backCallouts} onChange={(c) => patch({ backCallouts: c })} />
+      )}
+
+      <div>
+        <h3 className={h3}>Artwork sheet</h3>
+        <ul className="space-y-2">
+          {pack.artwork.map((a, i) => (
+            <li key={i} className="grid gap-2 rounded-lg border border-zinc-300 p-3 sm:grid-cols-5 dark:border-zinc-700">
+              {(["name", "technique", "placement", "size", "colour"] as const).map((k) => (
+                <input key={k} aria-label={`Artwork ${k}`} placeholder={k} className={box} value={a[k]}
+                  onChange={(e) => patch({ artwork: pack.artwork.map((x, j) => (j === i ? { ...x, [k]: e.target.value } : x)) })} />
+              ))}
+              <button type="button" className={`${small} sm:col-span-5 sm:justify-self-start`} onClick={() => patch({ artwork: remove(pack.artwork, i) })}>Remove</button>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className={`${small} mt-2`} onClick={() => patch({ artwork: [...pack.artwork, { name: "", technique: "", placement: "", size: "TBC", colour: "" }] })}>
+          Add artwork
+        </button>
+        <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+          Sizes are TBC unless you know them. Send the artwork files to your
+          factory with the PDF.
+        </p>
       </div>
 
       <div>
-        <h3 className="mb-2 font-semibold">Spec table (cm)</h3>
+        <h3 className={h3}>Thread sheet</h3>
+        <ul className="space-y-2">
+          {pack.threads.map((t, i) => (
+            <li key={i} className="grid gap-2 rounded-lg border border-zinc-300 p-3 sm:grid-cols-4 dark:border-zinc-700">
+              {(["description", "tex", "spi", "comment"] as const).map((k) => (
+                <input key={k} aria-label={`Thread ${k}`} placeholder={k === "tex" ? "TEX or count" : k} className={box} value={t[k]}
+                  onChange={(e) => patch({ threads: pack.threads.map((x, j) => (j === i ? { ...x, [k]: e.target.value } : x)) })} />
+              ))}
+              <button type="button" className={`${small} sm:col-span-4 sm:justify-self-start`} onClick={() => patch({ threads: remove(pack.threads, i) })}>Remove</button>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className={`${small} mt-2`} onClick={() => patch({ threads: [...pack.threads, { description: "", tex: "", spi: "", comment: "" }] })}>
+          Add thread row
+        </button>
+        <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+          Suggested standards. Confirm TEX, SPI and thread type with your factory.
+        </p>
+      </div>
+
+      <div>
+        <h3 className={h3}>Size sheet (cm)</h3>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -156,12 +289,13 @@ export default function TechPackView({
         </div>
         <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
           Base size values are yours. Other sizes and tolerances come from
-          standard grading rules; edit them to match your factory.
+          standard grading rules; edit them to match your factory. The PDF also
+          prints this table in inches.
         </p>
       </div>
 
       <div>
-        <h3 className="mb-2 font-semibold">Construction notes</h3>
+        <h3 className={h3}>Construction notes</h3>
         <ul className="space-y-2">
           {pack.notes.map((n, i) => (
             <li key={i} className="flex flex-col gap-2 sm:flex-row">
@@ -179,7 +313,7 @@ export default function TechPackView({
       </div>
 
       <div>
-        <h3 className="mb-2 font-semibold">Bill of materials (BOM)</h3>
+        <h3 className={h3}>BOM sheet (bill of materials)</h3>
         <ul className="space-y-3">
           {pack.bom.map((r, i) => {
             const set = (k: keyof BomRow, v: string) =>
@@ -206,14 +340,12 @@ export default function TechPackView({
           </button>
         </div>
         <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-          Each row is: category, item, placement, colour, specification,
-          quantity per garment. Quantities are estimates; confirm them with
-          your factory.
+          Quantities are estimates; confirm them with your factory.
         </p>
       </div>
 
       <div>
-        <h3 className="mb-2 font-semibold">Still missing (the factory will ask)</h3>
+        <h3 className={h3}>Still missing (the factory will ask)</h3>
         <ul className="space-y-2">
           {pack.missing.map((q, i) => (
             <li key={i} className="flex gap-2">

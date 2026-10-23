@@ -98,11 +98,14 @@ export const GARMENTS: Record<
   },
 };
 
+export const GENDERS = ["Men", "Women", "Unisex", "Kids"] as const;
+
 export const FITS = ["Slim", "Regular", "Relaxed", "Oversized"] as const;
 export const SIZES = ["XS", "S", "M", "L", "XL", "XXL"] as const;
 
 export type TechPackInput = {
   garmentType: GarmentType;
+  gender?: (typeof GENDERS)[number];
   fabric: string;
   fit: (typeof FITS)[number];
   sizeFrom: (typeof SIZES)[number];
