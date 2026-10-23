@@ -6,8 +6,15 @@ export const AiTechPackSchema = z.object({
   garmentDescription: z.string(),
   imageMatchesGarmentType: z.boolean(),
   constructionNotes: z.array(z.object({ area: z.string(), detail: z.string() })),
-  trims: z.array(
-    z.object({ item: z.string(), specification: z.string(), quantity: z.string() }),
+  bom: z.array(
+    z.object({
+      category: z.string(),
+      item: z.string(),
+      specification: z.string(),
+      placement: z.string(),
+      colour: z.string(),
+      quantity: z.string(),
+    }),
   ),
   missingDetails: z.array(z.string()),
 });

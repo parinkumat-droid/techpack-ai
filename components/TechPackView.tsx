@@ -4,7 +4,8 @@ import { useState } from "react";
 import { GARMENTS, type TechPackInput } from "@/lib/garments";
 import type { AiTechPack } from "@/lib/aiSchema";
 import type { SpecTable } from "@/lib/specRules";
-import type { EditablePack } from "@/lib/techPack";
+import type { BomRow, EditablePack } from "@/lib/techPack";
+import { downloadBomCsv } from "@/lib/bomCsv";
 import { downloadPdf } from "@/lib/pdf";
 
 const th = "border border-zinc-300 px-2 py-1 text-left dark:border-zinc-700";
@@ -32,11 +33,17 @@ function toPack(input: TechPackInput, specTable: SpecTable, ai: AiTechPack): Edi
       ),
     })),
     notes: ai.constructionNotes.map((n) => ({ ...n })),
-    trims: ai.trims.map((t) => ({
-      item: t.item,
-      specification: t.specification,
-      quantity: t.quantity,
-    })),
+    bom: [
+      {
+        category: "Fabric",
+        item: "Main fabric",
+        specification: input.fabric,
+        placement: "Body",
+        colour: "TBC",
+        quantity: "TBC (confirm with factory)",
+      },
+      ...ai.bom.map((b) => ({ ...b })),
+    ],
     missing: [...ai.missingDetails],
   };
 }
@@ -172,23 +179,37 @@ export default function TechPackView({
       </div>
 
       <div>
-        <h3 className="mb-2 font-semibold">Trims and materials</h3>
-        <ul className="space-y-2">
-          {pack.trims.map((t, i) => (
-            <li key={i} className="flex flex-col gap-2 sm:flex-row">
-              <input aria-label="Item" className={`${box} sm:w-44`} value={t.item}
-                onChange={(e) => patch({ trims: pack.trims.map((x, j) => (j === i ? { ...x, item: e.target.value } : x)) })} />
-              <textarea aria-label="Specification" rows={2} className={box} value={t.specification}
-                onChange={(e) => patch({ trims: pack.trims.map((x, j) => (j === i ? { ...x, specification: e.target.value } : x)) })} />
-              <input aria-label="Quantity" className={`${box} sm:w-40`} value={t.quantity}
-                onChange={(e) => patch({ trims: pack.trims.map((x, j) => (j === i ? { ...x, quantity: e.target.value } : x)) })} />
-              <button type="button" className={small} onClick={() => patch({ trims: remove(pack.trims, i) })}>Remove</button>
-            </li>
-          ))}
+        <h3 className="mb-2 font-semibold">Bill of materials (BOM)</h3>
+        <ul className="space-y-3">
+          {pack.bom.map((r, i) => {
+            const set = (k: keyof BomRow, v: string) =>
+              patch({ bom: pack.bom.map((x, j) => (j === i ? { ...x, [k]: v } : x)) });
+            return (
+              <li key={i} className="grid gap-2 rounded-lg border border-zinc-300 p-3 sm:grid-cols-6 dark:border-zinc-700">
+                <input aria-label="Category" className={box} value={r.category} onChange={(e) => set("category", e.target.value)} />
+                <input aria-label="Item" className={`${box} sm:col-span-2`} value={r.item} onChange={(e) => set("item", e.target.value)} />
+                <input aria-label="Placement" className={`${box} sm:col-span-2`} value={r.placement} onChange={(e) => set("placement", e.target.value)} />
+                <input aria-label="Colour" className={box} value={r.colour} onChange={(e) => set("colour", e.target.value)} />
+                <textarea aria-label="Specification" rows={2} className={`${box} sm:col-span-3`} value={r.specification} onChange={(e) => set("specification", e.target.value)} />
+                <input aria-label="Quantity per garment" className={`${box} sm:col-span-2`} value={r.quantity} onChange={(e) => set("quantity", e.target.value)} />
+                <button type="button" className={small} onClick={() => patch({ bom: remove(pack.bom, i) })}>Remove</button>
+              </li>
+            );
+          })}
         </ul>
-        <button type="button" className={`${small} mt-2`} onClick={() => patch({ trims: [...pack.trims, { item: "", specification: "", quantity: "" }] })}>
-          Add trim
-        </button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button type="button" className={small} onClick={() => patch({ bom: [...pack.bom, { category: "Trim", item: "", specification: "", placement: "", colour: "TBC", quantity: "" }] })}>
+            Add BOM row
+          </button>
+          <button type="button" className={small} onClick={() => downloadBomCsv(pack)}>
+            Download BOM (CSV for Excel)
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+          Each row is: category, item, placement, colour, specification,
+          quantity per garment. Quantities are estimates; confirm them with
+          your factory.
+        </p>
       </div>
 
       <div>

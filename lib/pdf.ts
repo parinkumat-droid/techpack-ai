@@ -115,14 +115,23 @@ export async function downloadPdf(pack: EditablePack, sketch: File) {
     y = lastY() + 8;
   }
 
-  if (pack.trims.length) {
-    section("Trims and materials");
+  if (pack.bom.length) {
+    section("Bill of materials (BOM)");
     autoTable(doc, {
       ...common,
       startY: y,
-      head: [["Item", "Specification", "Qty"]],
-      body: pack.trims.map((t) => [t.item, t.specification, t.quantity]),
-      columnStyles: { 0: { cellWidth: 42 }, 2: { cellWidth: 34 } },
+      styles: { fontSize: 8, cellPadding: 1.5 },
+      head: [["#", "Category", "Item", "Specification", "Placement", "Colour", "Qty / garment"]],
+      body: pack.bom.map((b, i) => [String(i + 1), b.category, b.item, b.specification, b.placement, b.colour, b.quantity]),
+      columnStyles: {
+        0: { cellWidth: 8 },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 28 },
+        3: { cellWidth: 54 },
+        4: { cellWidth: 26 },
+        5: { cellWidth: 18 },
+        6: { cellWidth: 28 },
+      },
     });
     y = lastY() + 8;
   }
