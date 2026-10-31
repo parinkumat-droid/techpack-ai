@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TechPack AI",
+  title: "FreeAITechPacker",
   description: "AI tech pack designer for small Indian fashion brands",
 };
 

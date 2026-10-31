@@ -1,4 +1,4 @@
-# TechPack AI
+# FreeAITechPacker
 
 AI tech pack designer for small Indian fashion brands. Upload a garment sketch, fill a short form, get an editable draft tech pack and a PDF for the factory.
 
