@@ -45,3 +45,6 @@ next-env.d.ts
 
 # private test sketches (keep out of the public repo)
 /test-sketches/
+
+# generated video (large, not for GitHub)
+/video-out/

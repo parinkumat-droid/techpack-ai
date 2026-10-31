@@ -4,7 +4,7 @@ AI tech pack designer for small Indian fashion brands. Upload a garment sketch, 
 
 Built for the ForgeX AI Hackathon, Mesa School of Business (October 2026).
 
-**Live prototype:** https://techpack-ai-silk.vercel.app
+**Live prototype:** https://freeaitechpacker.vercel.app
 
 ## Problem
 
